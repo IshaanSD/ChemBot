@@ -1,0 +1,8 @@
+langgraph
+langchain
+langchain-openai
+chromadb
+sentence-transformers
+tqdm
+pydantic
+requests
