@@ -102,3 +102,48 @@ def event_record_to_docs(rec: Dict[str, Any], chunk_chars: int, overlap: int) ->
         }
         docs.append((ch, meta | {"chunk_id": f"{base_hash}::summary::{k}"}))
     return docs
+
+def pubmed_record_to_docs(rec: Dict[str, Any], chunk_chars: int, overlap: int) -> List[Tuple[str, Dict[str, Any]]]:
+    pmid = rec.get("pmid") or ""
+    title = _norm_text(rec.get("title"))
+    abstract = _norm_text(rec.get("abstract"))
+    authors = rec.get("authors") or []
+    journal = _norm_text(rec.get("journal"))
+    year = rec.get("year") or ""
+    pub_types = rec.get("publication_types") or []
+    mesh_terms = rec.get("mesh_terms") or []
+
+    if not abstract:
+        return []
+
+    base_id = f"pubmed::{pmid}"
+    base_hash = hashlib.sha256(base_id.encode("utf-8")).hexdigest()[:16]
+
+    author_str = ", ".join(authors[:5])
+    if len(authors) > 5:
+        author_str += " et al."
+
+    full = (
+        f"PUBMED ARTICLE\n"
+        f"PMID={pmid}\n"
+        f"TITLE={title}\n"
+        f"JOURNAL={journal} ({year})\n"
+        f"AUTHORS={author_str}\n\n"
+        f"[ABSTRACT]\n{abstract}"
+    )
+
+    meta_base = {
+        "source": "pubmed",
+        "pmid": pmid,
+        "title": title,
+        "journal": journal,
+        "year": year,
+        "authors": "; ".join(authors),
+        "publication_types": "; ".join(pub_types),
+        "mesh_terms": "; ".join(mesh_terms),
+    }
+
+    docs: List[Tuple[str, Dict[str, Any]]] = []
+    for k, ch in enumerate(chunk_text(full, chunk_chars=chunk_chars, overlap=overlap)):
+        docs.append((ch, meta_base | {"chunk_id": f"{base_hash}::abstract::{k}"}))
+    return docs

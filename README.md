@@ -1,135 +1,208 @@
 # ChemBot
 
-ChemBot is a CLI medication-label Q&A agent built with:
-- **LangGraph** (graph-based agent control loop)
-- **Model Context Protocol (MCP)** (server/client architecture wrapping openFDA)
+ChemBot is a CLI biomedical Q&A agent built with:
+- **LangGraph** (graph-based agent control loop with multi-route fan-out)
+- **Model Context Protocol (MCP)** (server/client architecture wrapping openFDA and PubMed)
 - **ChromaDB** (persistent local vector store)
 - **Sentence Transformers** (local embeddings)
 - **OpenAI** (LLM responses)
 
-ChemBot answers using ONLY retrieved FDA drug label excerpts.
+ChemBot answers using ONLY retrieved evidence from three sources:
+- **FDA Drug Labels** — official regulatory prescribing information
+- **FAERS** — FDA Adverse Event Reporting System data
+- **PubMed** — published biomedical literature via NCBI Entrez
 
 ---
 
 ## Architecture
 
-ChemBot decouples the openFDA API data retrieval into a dedicated MCP server. Communication occurs via JSON-RPC over Standard Input/Output (stdio) transport:
+```
+User
+  │
+  ▼
+LangGraph Router (multi-route)
+  │
+  ├── FDA Label Retrieval ──► openFDA MCP Server
+  │
+  ├── FAERS Event Retrieval ─► openFDA MCP Server
+  │
+  └── PubMed Retrieval ─────► PubMed MCP Server
+  │
+  ▼
+Evidence Fusion (groups by source)
+  │
+  ▼
+Answer Generation (OpenAI)
+```
+
+The router can select **one or more branches** per query:
+
+| Question | Routes |
+|----------|--------|
+| "What are the contraindications for ibuprofen?" | FDA Label |
+| "What adverse events have been reported for Ozempic?" | FAERS |
+| "What recent studies exist on semaglutide and Alzheimer's?" | PubMed |
+| "Is ibuprofen safe during pregnancy?" | FDA Label + PubMed |
+| "Is semaglutide associated with pancreatitis?" | FAERS + PubMed |
+
+### MCP Servers
+
+Both MCP servers use **stdio transport** — ChemBot automatically spawns and manages them as subprocesses:
 
 ```
-[LangGraph Node] 
+[LangGraph Node]
        │ (sync calls)
        ▼
-[OpenFDAMCPClient] (Client Adapter)
-       │ (async event loop thread)
+[MCP Client Adapter] (thread-safe async event loop)
+       │ (JSON-RPC over stdio)
        ▼
-[Stdio JSON-RPC Transport]
-       │
-       ▼
-[FastMCP Server] (mcp_servers/openfda_server.py)
+[FastMCP Server]
        │ (requests)
        ▼
-[openFDA HTTP API]
+[External API]
 ```
+
+| Server | File | API | Tools |
+|--------|------|-----|-------|
+| OpenFDA | `mcp_servers/openfda_server.py` | openFDA | `search_drug_labels`, `search_adverse_events` |
+| PubMed | `mcp_servers/pubmed_server.py` | NCBI Entrez | `search_pubmed`, `search_clinical_trials`, `search_systematic_reviews`, `search_meta_analyses`, `fetch_abstracts` |
 
 ---
 
 ## Install ChemBot
 
 ```bash
-# Change directory to ChemBot
 pip install -r requirements.txt
 
 # Export OpenAI credential
 export OPENAI_API_KEY="your-openai-api-key"
+
+# NCBI requires an email for Entrez API usage (PubMed)
+export NCBI_EMAIL="your-email@example.com"
+```
+
+### Optional API keys
+
+```bash
+# Higher openFDA rate limits
+export OPENFDA_API_KEY="your-openfda-key"
+
+# Higher NCBI rate limits (3 → 10 req/sec)
+export NCBI_API_KEY="your-ncbi-key"
 ```
 
 ---
 
-## Run ChemBot (Default MCP Mode)
+## Run ChemBot
 
-By default, ChemBot runs using the Model Context Protocol (MCP) data access layer:
+By default, ChemBot runs with all three evidence sources via MCP:
 
 ```bash
 python -m chembot.graph_cli --chroma_dir ./chroma_db
 ```
 
-To switch models:
+### Disable PubMed
+
+```bash
+python -m chembot.graph_cli --chroma_dir ./chroma_db --disable_pubmed
+```
+
+### Use legacy direct OpenFDA client (no MCP)
+
+```bash
+python -m chembot.graph_cli --chroma_dir ./chroma_db --use_direct_openfda --disable_pubmed
+```
+
+### Switch LLM model
+
 ```bash
 python -m chembot.graph_cli --chroma_dir ./chroma_db --openai_model gpt-4-mini
 ```
 
-To run using the legacy direct HTTP fallback mode instead of MCP:
-```bash
-python -m chembot.graph_cli --chroma_dir ./chroma_db --use_direct_openfda
+---
+
+## Example Questions
+
+### FDA Label query
+```
+User: What are the contraindications for ibuprofen?
+```
+
+### FAERS adverse event query
+```
+User: What adverse events have been reported for Ozempic?
+```
+
+### PubMed literature query
+```
+User: What recent studies exist on semaglutide and Alzheimer's disease?
+```
+
+### Multi-source query (FDA Label + PubMed)
+```
+User: Is ibuprofen safe during pregnancy?
 ```
 
 ---
 
-## Running ChemBot with OpenFDA MCP
+## Debug Logging
 
-Follow these steps to run ChemBot using the Model Context Protocol (MCP) server/client architecture:
+Enable debug logging to see MCP JSON-RPC traffic:
 
-### 1. Install requirements
-Ensure all dependencies are installed:
-```bash
-pip install -r requirements.txt
-```
-
-### 2. Set OpenAI API Key
-Export your OpenAI credentials:
-```bash
-export OPENAI_API_KEY="your-openai-api-key"
-```
-
-### 3. Optionally set openFDA API Key
-For higher query limits, you can optionally export your openFDA credentials:
-```bash
-export OPENFDA_API_KEY="your-openfda-key"
-```
-
-### 4. Start the OpenFDA MCP Server
-*   **Stdio Transport (Default):** You do **not** need to manually start the server. The ChemBot client automatically spawns, connects to, and handles the local MCP server subprocess on launch.
-*   **Dev Mode / Standalone:** If you want to run the server in standalone debug mode to view tool registration and schemas, run:
-    ```bash
-    fastmcp dev mcp_servers/openfda_server.py
-    ```
-
-### 5. Run ChemBot
-Start the CLI agent (which runs in MCP mode by default):
-```bash
-python -m chembot.graph_cli --chroma_dir ./chroma_db
-```
-
-### 6. Example Label Question
-Once ChemBot starts, ask about a medication label:
-```
-User: What are the warnings for Aspirin?
-```
-
-### 7. Example Adverse Event Question
-Ask about adverse safety events:
-```
-User: What side effects are reported for Boniva?
-```
-
-### 8. How to verify the MCP server is actually being used
-Enable debug logging to see the live JSON-RPC traffic between the client and the MCP server. Set the `CHEMBOT_DEBUG=1` environment variable before running:
 ```bash
 export CHEMBOT_DEBUG=1
 python -m chembot.graph_cli --chroma_dir ./chroma_db
 ```
-You will see output prefixed with `[MCP CLIENT DEBUG]` in standard error as the tools are called:
+
+You will see output prefixed with `[MCP CLIENT DEBUG]` and `[PUBMED MCP DEBUG]` in stderr:
 ```
 [MCP CLIENT DEBUG] Calling tool 'search_drug_labels' with arguments: {'search': '...', 'limit': 3}
-[MCP CLIENT DEBUG] Raw tool result content preview: [TextContent(type='text', text='...')]
-[MCP CLIENT DEBUG] Parsed tool response: found 1 results. Status: Success
+[MCP CLIENT DEBUG] Parsed tool response: found 3 results. Status: Success
+[PUBMED MCP DEBUG] Calling tool 'search_pubmed' with arguments: {'query': '...', 'max_results': 5}
+[PUBMED MCP DEBUG] Parsed tool response: found 4 results.
 ```
 
 ---
 
-## Configuration & Debugging
+## Configuration
+
+### CLI Arguments
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--chroma_dir` | (required) | Path to ChromaDB directory |
+| `--collection` | `chembot_cache` | Chroma collection name |
+| `--st_model` | `all-MiniLM-L6-v2` | Sentence Transformer model |
+| `--k` | `6` | Top-k chunks for answer generation |
+| `--label_limit` | `3` | Max FDA label records |
+| `--event_limit` | `3` | Max FAERS event records |
+| `--pubmed_limit` | `5` | Max PubMed abstracts |
+| `--disable_pubmed` | `false` | Disable PubMed retrieval |
+| `--use_direct_openfda` | `false` | Use direct HTTP client (no MCP) |
+| `--openai_model` | `gpt-4.1-mini` | OpenAI model |
+| `--temperature` | `0.2` | LLM temperature |
+| `--max_tokens` | `900` | LLM max tokens |
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `OPENAI_API_KEY` | Yes | OpenAI API key |
+| `NCBI_EMAIL` | Recommended | Email for NCBI Entrez API (PubMed) |
+| `NCBI_API_KEY` | No | NCBI API key (increases rate limit) |
+| `OPENFDA_API_KEY` | No | openFDA API key |
+| `CHEMBOT_DEBUG` | No | Set to `1` for MCP debug logging |
+| `OPENFDA_MCP_COMMAND` | No | Custom MCP server command (default: `python`) |
+| `OPENFDA_MCP_ARGS` | No | Custom MCP server args (default: `mcp_servers/openfda_server.py`) |
+| `PUBMED_MCP_COMMAND` | No | Custom PubMed MCP server command |
+| `PUBMED_MCP_ARGS` | No | Custom PubMed MCP server args |
 
 ### Custom MCP Server Invocation
-By default, the client launches the local MCP server using `python mcp_servers/openfda_server.py`. You can customize the command and arguments via environment variables:
-*   `OPENFDA_MCP_COMMAND`: The executable (defaults to `python`).
-*   `OPENFDA_MCP_ARGS`: Command arguments (defaults to `mcp_servers/openfda_server.py`).
+
+By default, clients launch local MCP servers using `python mcp_servers/<server>.py`. You can customize via environment variables listed above.
+
+For standalone debug mode:
+```bash
+fastmcp dev mcp_servers/openfda_server.py
+fastmcp dev mcp_servers/pubmed_server.py
+```
