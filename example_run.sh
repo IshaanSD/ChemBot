@@ -13,17 +13,27 @@ export PYTHONPATH="src"
 CHROMA_DIR="./chroma_db"
 
 echo "======================================================================"
-echo "Starting ChemBot Test Run"
+echo "Starting ChemBot Test Run (1/2) - DIRECT CLIENT FALLBACK"
 echo "  Chroma Directory: $CHROMA_DIR"
 echo "  Inputs: 'Aspirin', 'q'"
 echo "======================================================================"
 echo ""
 
-# Feed "Aspirin" and then "q" to the CLI agent
-# -u forces Python stdout/stderr to be unbuffered so output appears in real-time
+# Run in Direct client mode (default)
 printf "Aspirin\nq\n" | python -u -m chembot.graph_cli --chroma_dir "$CHROMA_DIR"
 
 echo ""
 echo "======================================================================"
-echo "ChemBot Test Run Completed"
+echo "Starting ChemBot Test Run (2/2) - MCP MODE"
+echo "  Chroma Directory: $CHROMA_DIR"
+echo "  Inputs: 'Aspirin', 'q'"
+echo "======================================================================"
+echo ""
+
+# Run in MCP client mode (using --use_mcp_openfda)
+printf "Aspirin\nq\n" | python -u -m chembot.graph_cli --chroma_dir "$CHROMA_DIR" --use_mcp_openfda
+
+echo ""
+echo "======================================================================"
+echo "ChemBot Test Runs Completed Successfully"
 echo "======================================================================"

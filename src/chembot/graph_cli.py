@@ -13,6 +13,7 @@ from .rag import RAGStore
 from .prompts import CHEMBOT_SYS, WELCOME
 import os
 from .openfda_mcp_client import OpenFDAMCPClient
+from .openfda_client import OpenFDAClient
 from .cache_index import label_record_to_docs, event_record_to_docs
 
 
@@ -220,6 +221,7 @@ def main():
     ap.add_argument("--openfda_api_key", default=None)
     ap.add_argument("--label_limit", type=int, default=3)
     ap.add_argument("--event_limit", type=int, default=3)
+    ap.add_argument("--use_mcp_openfda", action="store_true", help="Use OpenFDA MCP server instead of direct client")
 
     # Chunking
     ap.add_argument("--chunk_chars", type=int, default=2200)
@@ -233,9 +235,12 @@ def main():
     args = ap.parse_args()
 
     rag = RAGStore(args.chroma_dir, args.collection, args.st_model, device=args.st_device)
-    if args.openfda_api_key:
-        os.environ["OPENFDA_API_KEY"] = args.openfda_api_key
-    fda = OpenFDAMCPClient()
+    if args.use_mcp_openfda:
+        if args.openfda_api_key:
+            os.environ["OPENFDA_API_KEY"] = args.openfda_api_key
+        fda = OpenFDAMCPClient()
+    else:
+        fda = OpenFDAClient(api_key=args.openfda_api_key)
     llm = ChatOpenAI(model=args.openai_model, temperature=args.temperature, max_tokens=args.max_tokens)
 
     graph = StateGraph(AgentState)
