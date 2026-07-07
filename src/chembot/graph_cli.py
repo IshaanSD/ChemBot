@@ -77,7 +77,10 @@ EVENT_MARKERS = [
 LABEL_MARKERS = [
     "contraindication", "warning", "indication", "dosage",
     "administration", "label", "prescribing", "fda",
-    "pregnancy category", "geriatric", "drug interaction",
+    "pregnancy", "pregnant", "pregnancy category",
+    "geriatric", "elderly", "older",
+    "pediatric", "child", "children",
+    "drug interaction", "renal",
 ]
 
 
@@ -125,6 +128,10 @@ def router_node(state: AgentState) -> AgentState:
     if not routes:
         routes = ["label"]
 
+    if os.environ.get("CHEMBOT_DEBUG") == "1":
+        import sys
+        print(f"\n[ROUTER DEBUG] Selected routes: {routes} for query: '{q}'", file=sys.stderr)
+
     return state | {"routes": routes}
 
 
@@ -135,10 +142,10 @@ def label_retrieval_node_factory(
     chunk_chars: int,
     overlap: int,
 ):
-    def node(state: AgentState) -> AgentState:
+    def node(state: AgentState) -> dict:
         q = last_user_text(state)
         if not q:
-            return state
+            return {}
 
         # Fetch from openFDA label endpoint and cache into Chroma
         search = build_label_search(q)
@@ -154,7 +161,7 @@ def label_retrieval_node_factory(
             embs = rag.st.encode(texts, normalize_embeddings=True).tolist()
             rag.col.upsert(ids=ids, documents=texts, metadatas=metas, embeddings=embs)
 
-        return state
+        return {}
     return node
 
 
@@ -165,10 +172,10 @@ def event_retrieval_node_factory(
     chunk_chars: int,
     overlap: int,
 ):
-    def node(state: AgentState) -> AgentState:
+    def node(state: AgentState) -> dict:
         q = last_user_text(state)
         if not q:
-            return state
+            return {}
 
         # Fetch from openFDA event endpoint and cache into Chroma
         search = build_event_search(q)
@@ -184,7 +191,7 @@ def event_retrieval_node_factory(
             embs = rag.st.encode(texts, normalize_embeddings=True).tolist()
             rag.col.upsert(ids=ids, documents=texts, metadatas=metas, embeddings=embs)
 
-        return state
+        return {}
     return node
 
 
@@ -195,10 +202,10 @@ def pubmed_retrieval_node_factory(
     chunk_chars: int,
     overlap: int,
 ):
-    def node(state: AgentState) -> AgentState:
+    def node(state: AgentState) -> dict:
         q = last_user_text(state)
         if not q:
-            return state
+            return {}
 
         # Fetch from PubMed via MCP and cache into Chroma
         recs = pubmed.search(query=q, max_results=pubmed_limit)
@@ -213,7 +220,7 @@ def pubmed_retrieval_node_factory(
             embs = rag.st.encode(texts, normalize_embeddings=True).tolist()
             rag.col.upsert(ids=ids, documents=texts, metadatas=metas, embeddings=embs)
 
-        return state
+        return {}
     return node
 
 
@@ -316,6 +323,9 @@ def answer_node_factory(llm: ChatOpenAI):
 def route_fan_out(state: AgentState) -> list:
     """Fan-out: returns a list of Send objects for each selected route."""
     routes = state.get("routes", ["label"])
+    if os.environ.get("CHEMBOT_DEBUG") == "1":
+        import sys
+        print(f"[ROUTER DEBUG] Fanning out to nodes: {[r + '_retrieval' for r in routes]}", file=sys.stderr)
     sends = []
     for r in routes:
         if r == "label":
@@ -429,6 +439,9 @@ def main():
         # Without PubMed, use simplified routing that filters out pubmed routes
         def route_fan_out_no_pubmed(state: AgentState) -> list:
             routes = [r for r in state.get("routes", ["label"]) if r != "pubmed"]
+            if os.environ.get("CHEMBOT_DEBUG") == "1":
+                import sys
+                print(f"[ROUTER DEBUG] Fanning out (PubMed disabled) to nodes: {[r + '_retrieval' for r in routes]}", file=sys.stderr)
             sends = []
             for r in routes:
                 if r == "label":
