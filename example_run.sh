@@ -18,30 +18,27 @@ export CHEMBOT_DEBUG=1
 echo "======================================================================"
 echo "Starting ChemBot Test Run (1/2) - DIRECT CLIENT FALLBACK"
 echo "  Chroma Directory: $CHROMA_DIR"
-echo "  Mode: Direct (Fallback)"
+echo "  Mode: Direct (Fallback via --use_direct_openfda)"
 echo "  Inputs: 'Ibuprofen' -> 'What are the side effects of ibuprofen?' -> 'q'"
 echo "  Verification: (No [MCP CLIENT DEBUG] lines should appear)"
 echo "======================================================================"
 echo ""
 
-# Feed queries to the CLI agent
-# 1. Ask about Ibuprofen (causes label query)
-# 2. Ask about side effects of ibuprofen (causes adverse event query)
-# 3. Quit
-printf "Ibuprofen\nWhat are the side effects of ibuprofen?\nq\n" | python -u -m chembot.graph_cli --chroma_dir "$CHROMA_DIR"
+# Feed queries to the CLI agent using --use_direct_openfda fallback flag
+printf "Ibuprofen\nWhat are the side effects of ibuprofen?\nq\n" | python -u -m chembot.graph_cli --chroma_dir "$CHROMA_DIR" --use_direct_openfda
 
 echo ""
 echo "======================================================================"
-echo "Starting ChemBot Test Run (2/2) - MCP MODE"
+echo "Starting ChemBot Test Run (2/2) - MCP MODE (DEFAULT)"
 echo "  Chroma Directory: $CHROMA_DIR"
-echo "  Mode: MCP"
+echo "  Mode: MCP (Default)"
 echo "  Inputs: 'Ibuprofen' -> 'What are the side effects of ibuprofen?' -> 'q'"
 echo "  Verification: ([MCP CLIENT DEBUG] logs will show in stderr)"
 echo "======================================================================"
 echo ""
 
-# Feed the same queries in MCP mode
-printf "Ibuprofen\nWhat are the side effects of ibuprofen?\nq\n" | python -u -m chembot.graph_cli --chroma_dir "$CHROMA_DIR" --use_mcp_openfda
+# Feed the same queries in default MCP mode
+printf "Ibuprofen\nWhat are the side effects of ibuprofen?\nq\n" | python -u -m chembot.graph_cli --chroma_dir "$CHROMA_DIR"
 
 echo ""
 echo "======================================================================"

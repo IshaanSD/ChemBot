@@ -45,9 +45,9 @@ export OPENAI_API_KEY="your-openai-api-key"
 
 ---
 
-## Run ChemBot (Direct Fallback Mode)
+## Run ChemBot (Default MCP Mode)
 
-By default, ChemBot runs in legacy fallback mode using the direct HTTP client:
+By default, ChemBot runs using the Model Context Protocol (MCP) data access layer:
 
 ```bash
 python -m chembot.graph_cli --chroma_dir ./chroma_db
@@ -56,6 +56,11 @@ python -m chembot.graph_cli --chroma_dir ./chroma_db
 To switch models:
 ```bash
 python -m chembot.graph_cli --chroma_dir ./chroma_db --openai_model gpt-4-mini
+```
+
+To run using the legacy direct HTTP fallback mode instead of MCP:
+```bash
+python -m chembot.graph_cli --chroma_dir ./chroma_db --use_direct_openfda
 ```
 
 ---
@@ -89,10 +94,10 @@ export OPENFDA_API_KEY="your-openfda-key"
     fastmcp dev mcp_servers/openfda_server.py
     ```
 
-### 5. Run ChemBot with the MCP flag
-Start the CLI agent, passing the `--use_mcp_openfda` flag:
+### 5. Run ChemBot
+Start the CLI agent (which runs in MCP mode by default):
 ```bash
-python -m chembot.graph_cli --chroma_dir ./chroma_db --use_mcp_openfda
+python -m chembot.graph_cli --chroma_dir ./chroma_db
 ```
 
 ### 6. Example Label Question
@@ -111,7 +116,7 @@ User: What side effects are reported for Boniva?
 Enable debug logging to see the live JSON-RPC traffic between the client and the MCP server. Set the `CHEMBOT_DEBUG=1` environment variable before running:
 ```bash
 export CHEMBOT_DEBUG=1
-python -m chembot.graph_cli --chroma_dir ./chroma_db --use_mcp_openfda
+python -m chembot.graph_cli --chroma_dir ./chroma_db
 ```
 You will see output prefixed with `[MCP CLIENT DEBUG]` in standard error as the tools are called:
 ```
