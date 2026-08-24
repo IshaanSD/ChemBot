@@ -45,6 +45,16 @@ def label_record_to_docs(rec: Dict[str, Any], chunk_chars: int, overlap: int) ->
     substance = _norm_text((openfda.get("substance_name") or [""])[0])
     drug_name = brand or generic or substance or "UNKNOWN_DRUG"
 
+    # Construct a comprehensive drug header so semantic search can find it via brand or generic/substance name
+    header_parts = []
+    if brand:
+        header_parts.append(f"Brand: {brand}")
+    if generic:
+        header_parts.append(f"Generic: {generic}")
+    if substance and substance != generic:
+        header_parts.append(f"Substance: {substance}")
+    header_str = " | ".join(header_parts) if header_parts else drug_name
+
     set_id = rec.get("set_id") or ""
     effective_time = rec.get("effective_time") or ""
     base_id = f"label::{set_id}::{effective_time}::{drug_name}"
@@ -55,7 +65,7 @@ def label_record_to_docs(rec: Dict[str, Any], chunk_chars: int, overlap: int) ->
         text = _norm_text(rec.get(sec))
         if not text:
             continue
-        full = f"DRUG: {drug_name}\nSECTION: {sec}\nEFFECTIVE_TIME: {effective_time}\n\n{text}"
+        full = f"DRUG: {header_str}\nSECTION: {sec}\nEFFECTIVE_TIME: {effective_time}\n\n{text}"
         for k, ch in enumerate(chunk_text(full, chunk_chars=chunk_chars, overlap=overlap)):
             meta = {
                 "source": "openfda_label",

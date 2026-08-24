@@ -17,6 +17,7 @@ from .openfda_mcp_client import OpenFDAMCPClient
 from .openfda_client import OpenFDAClient
 from .pubmed_mcp_client import PubMedMCPClient
 from .cache_index import label_record_to_docs, event_record_to_docs, pubmed_record_to_docs
+from .planner import QueryPlan, QueryPlanner
 
 
 Route = Literal["label", "event", "pubmed"]
@@ -26,6 +27,7 @@ class AgentState(TypedDict):
     messages: Annotated[List, add_messages]
     retrieved: List[str]
     routes: List[str]
+    query_plan: Optional[QueryPlan]
     finished: bool
 
 
@@ -38,50 +40,7 @@ def last_user_text(state: AgentState) -> str:
             return m.content.strip()
     return ""
 
-
-def build_label_search(q: str) -> str:
-    # Broad + practical starter query: search by drug identity fields.
-    # You can later add a dedicated "query_builder" node if you want.
-    q = q.replace('"', "")
-    return (
-        f'openfda.brand_name:"{q}" OR openfda.generic_name:"{q}" OR openfda.substance_name:"{q}"'
-    )
-
-
-def build_event_search(q: str) -> str:
-    # Matches the pattern in your example: reactionmeddrapt:"headache"
-    # In "event" mode we interpret q as a reaction term; later you can improve routing/query building.
-    q = q.replace('"', "")
-    return f'reactionmeddrapt:"{q}"'
-
-
-# ----------------------------
-# Router keyword sets
-# ----------------------------
-PUBMED_MARKERS = [
-    "mechanism", "pathway", "molecular", "biological", "pharmacogenomic",
-    "cyp", "biomarker", "clinical trial", "randomized", "rct",
-    "systematic review", "meta-analysis", "meta analysis", "metaanalysis",
-    "observational", "cohort", "study", "studies", "evidence",
-    "compare", "comparison", "vs", "versus", "safer",
-    "population", "elderly", "children", "pediatric", "pregnancy",
-    "renal impairment", "ethnic", "recent", "literature", "pubmed",
-    "research", "why does", "how does", "explain",
-]
-
-EVENT_MARKERS = [
-    "adverse", "faers", "reported", "report", "reaction",
-    "side effect", "frequency", "how common",
-]
-
-LABEL_MARKERS = [
-    "contraindication", "warning", "indication", "dosage",
-    "administration", "label", "prescribing", "fda",
-    "pregnancy", "pregnant", "pregnancy category",
-    "geriatric", "elderly", "older",
-    "pediatric", "child", "children",
-    "drug interaction", "renal",
-]
+planner = QueryPlanner()
 
 
 # ----------------------------
@@ -89,7 +48,7 @@ LABEL_MARKERS = [
 # ----------------------------
 def start_node(state: AgentState) -> AgentState:
     # One-time welcome when the graph starts
-    return state | {"messages": [AIMessage(content=WELCOME)], "retrieved": [], "routes": [], "finished": False}
+    return state | {"messages": [AIMessage(content=WELCOME)], "retrieved": [], "routes": [], "query_plan": None, "finished": False}
 
 
 def human_node(state: AgentState) -> AgentState:
@@ -107,32 +66,26 @@ def human_node(state: AgentState) -> AgentState:
 
 def router_node(state: AgentState) -> AgentState:
     """
-    Multi-route router: selects one or more evidence branches based on the query.
-    Can select any combination of: label, event, pubmed.
+    Multi-route router: uses the QueryPlanner to normalize concepts,
+    select routes, and generate optimized search queries.
     """
-    q = last_user_text(state).lower()
+    q = last_user_text(state)
 
     if not q:
-        return state | {"routes": ["label"]}
+        return state | {"routes": ["label"], "query_plan": None}
 
-    routes: List[str] = []
-
-    if any(m in q for m in EVENT_MARKERS):
-        routes.append("event")
-    if any(m in q for m in PUBMED_MARKERS):
-        routes.append("pubmed")
-    if any(m in q for m in LABEL_MARKERS):
-        routes.append("label")
-
-    # Default: if no markers matched, route to label
-    if not routes:
-        routes = ["label"]
+    plan = planner.plan(q)
 
     if os.environ.get("CHEMBOT_DEBUG") == "1":
         import sys
-        print(f"\n[ROUTER DEBUG] Selected routes: {routes} for query: '{q}'", file=sys.stderr)
+        if plan.explanation:
+            print(f"\n[PLANNER DEBUG] Explanation: {plan.explanation}", file=sys.stderr)
+        if plan.drug_mappings:
+            mappings_str = ", ".join(f"{brand} -> {', '.join(generics)}" for brand, generics in plan.drug_mappings.items())
+            print(f"[PLANNER DEBUG] Synonym mappings: {mappings_str}", file=sys.stderr)
+        print(f"[ROUTER DEBUG] Selected routes: {plan.routes} for query: '{q}'", file=sys.stderr)
 
-    return state | {"routes": routes}
+    return state | {"routes": plan.routes, "query_plan": plan}
 
 
 def label_retrieval_node_factory(
@@ -143,23 +96,22 @@ def label_retrieval_node_factory(
     overlap: int,
 ):
     def node(state: AgentState) -> dict:
-        q = last_user_text(state)
-        if not q:
-            return {}
+        plan = state.get("query_plan")
+        queries = plan.label_queries if plan else []
 
-        # Fetch from openFDA label endpoint and cache into Chroma
-        search = build_label_search(q)
-        recs = fda.search_labels(search=search, limit=label_limit)
+        for search in queries:
+            # Fetch from openFDA label endpoint and cache into Chroma
+            recs = fda.search_labels(search=search, limit=label_limit)
 
-        for rec in recs:
-            docs = label_record_to_docs(rec, chunk_chars=chunk_chars, overlap=overlap)
-            if not docs:
-                continue
-            texts = [t for (t, _) in docs]
-            metas = [m for (_, m) in docs]
-            ids = [m["chunk_id"] for m in metas]
-            embs = rag.st.encode(texts, normalize_embeddings=True).tolist()
-            rag.col.upsert(ids=ids, documents=texts, metadatas=metas, embeddings=embs)
+            for rec in recs:
+                docs = label_record_to_docs(rec, chunk_chars=chunk_chars, overlap=overlap)
+                if not docs:
+                    continue
+                texts = [t for (t, _) in docs]
+                metas = [m for (_, m) in docs]
+                ids = [m["chunk_id"] for m in metas]
+                embs = rag.st.encode(texts, normalize_embeddings=True).tolist()
+                rag.col.upsert(ids=ids, documents=texts, metadatas=metas, embeddings=embs)
 
         return {}
     return node
@@ -173,23 +125,22 @@ def event_retrieval_node_factory(
     overlap: int,
 ):
     def node(state: AgentState) -> dict:
-        q = last_user_text(state)
-        if not q:
-            return {}
+        plan = state.get("query_plan")
+        queries = plan.event_queries if plan else []
 
-        # Fetch from openFDA event endpoint and cache into Chroma
-        search = build_event_search(q)
-        recs = fda.search_events(search=search, limit=event_limit)
+        for search in queries:
+            # Fetch from openFDA event endpoint and cache into Chroma
+            recs = fda.search_events(search=search, limit=event_limit)
 
-        for rec in recs:
-            docs = event_record_to_docs(rec, chunk_chars=chunk_chars, overlap=overlap)
-            if not docs:
-                continue
-            texts = [t for (t, _) in docs]
-            metas = [m for (_, m) in docs]
-            ids = [m["chunk_id"] for m in metas]
-            embs = rag.st.encode(texts, normalize_embeddings=True).tolist()
-            rag.col.upsert(ids=ids, documents=texts, metadatas=metas, embeddings=embs)
+            for rec in recs:
+                docs = event_record_to_docs(rec, chunk_chars=chunk_chars, overlap=overlap)
+                if not docs:
+                    continue
+                texts = [t for (t, _) in docs]
+                metas = [m for (_, m) in docs]
+                ids = [m["chunk_id"] for m in metas]
+                embs = rag.st.encode(texts, normalize_embeddings=True).tolist()
+                rag.col.upsert(ids=ids, documents=texts, metadatas=metas, embeddings=embs)
 
         return {}
     return node
@@ -203,22 +154,22 @@ def pubmed_retrieval_node_factory(
     overlap: int,
 ):
     def node(state: AgentState) -> dict:
-        q = last_user_text(state)
-        if not q:
-            return {}
+        plan = state.get("query_plan")
+        queries = plan.pubmed_queries if plan else []
 
-        # Fetch from PubMed via MCP and cache into Chroma
-        recs = pubmed.search(query=q, max_results=pubmed_limit)
+        for search in queries:
+            # Fetch from PubMed via MCP and cache into Chroma
+            recs = pubmed.search(query=search, max_results=pubmed_limit)
 
-        for rec in recs:
-            docs = pubmed_record_to_docs(rec, chunk_chars=chunk_chars, overlap=overlap)
-            if not docs:
-                continue
-            texts = [t for (t, _) in docs]
-            metas = [m for (_, m) in docs]
-            ids = [m["chunk_id"] for m in metas]
-            embs = rag.st.encode(texts, normalize_embeddings=True).tolist()
-            rag.col.upsert(ids=ids, documents=texts, metadatas=metas, embeddings=embs)
+            for rec in recs:
+                docs = pubmed_record_to_docs(rec, chunk_chars=chunk_chars, overlap=overlap)
+                if not docs:
+                    continue
+                texts = [t for (t, _) in docs]
+                metas = [m for (_, m) in docs]
+                ids = [m["chunk_id"] for m in metas]
+                embs = rag.st.encode(texts, normalize_embeddings=True).tolist()
+                rag.col.upsert(ids=ids, documents=texts, metadatas=metas, embeddings=embs)
 
         return {}
     return node
@@ -231,7 +182,21 @@ def evidence_fusion_node_factory(rag: RAGStore, k: int):
         if not q:
             return state
 
-        hits = rag.retrieve(q, k=k)
+        plan = state.get("query_plan")
+        search_query = q
+        if plan:
+            parts = []
+            if plan.normalized_drugs:
+                parts.extend(plan.normalized_drugs)
+            if plan.normalized_terms:
+                parts.extend(plan.normalized_terms)
+            if parts:
+                search_query = " ".join(parts)
+                if os.environ.get("CHEMBOT_DEBUG") == "1":
+                    import sys
+                    print(f"[RETRIEVAL DEBUG] Reformulated query for Chroma: '{search_query}' (original: '{q}')", file=sys.stderr)
+
+        hits = rag.retrieve(search_query, k=k)
 
         # Group by source
         groups = {
@@ -301,12 +266,23 @@ def answer_node_factory(llm: ChatOpenAI):
 
         context = "\n\n".join(state.get("retrieved", []))
 
+        plan = state.get("query_plan")
+        mapping_str = ""
+        if plan and plan.drug_mappings:
+            mappings = []
+            for k, v in plan.drug_mappings.items():
+                if v:
+                    mappings.append(f"{k} -> {', '.join(v)}")
+            if mappings:
+                mapping_str = "Resolved drug mappings:\n" + "\n".join(mappings) + "\n\n"
+
         messages = [
             SystemMessage(content=CHEMBOT_SYS),
             HumanMessage(
                 content=(
                     "EVIDENCE EXCERPTS:\n"
                     f"{context}\n\n"
+                    f"{mapping_str}"
                     "USER QUESTION:\n"
                     f"{q}"
                 )
@@ -466,7 +442,7 @@ def main():
 
     app = graph.compile()
 
-    state: AgentState = {"messages": [], "retrieved": [], "routes": [], "finished": False}
+    state: AgentState = {"messages": [], "retrieved": [], "routes": [], "query_plan": None, "finished": False}
     while True:
         state = app.invoke(state)
         if state.get("finished"):
