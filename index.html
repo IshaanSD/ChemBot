@@ -1,0 +1,1395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChemBot — Biomedical Q&A Agent with LangGraph & MCP</title>
+    
+    <!-- SEO Meta Tags -->
+    <meta name="description" content="ChemBot is a CLI biomedical Q&A agent built with LangGraph, Model Context Protocol (MCP), ChromaDB, and OpenAI, providing evidence-fused answers from FDA labels, FAERS, and PubMed.">
+    <meta name="keywords" content="ChemBot, LangGraph, Model Context Protocol, MCP, openFDA, PubMed, ChromaDB, OpenAI, Biomedical QA, AI Agent">
+    <meta name="author" content="IshaanSD">
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://ishaansd.github.io/ChemBot/">
+    <meta property="og:title" content="ChemBot — Biomedical Q&A Agent with LangGraph & MCP">
+    <meta property="og:description" content="ChemBot is a CLI biomedical Q&A agent built with LangGraph, Model Context Protocol (MCP), ChromaDB, and OpenAI, providing evidence-fused answers from FDA labels, FAERS, and PubMed.">
+    
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:title" content="ChemBot — Biomedical Q&A Agent with LangGraph & MCP">
+    <meta property="twitter:description" content="ChemBot is a CLI biomedical Q&A agent built with LangGraph, Model Context Protocol (MCP), ChromaDB, and OpenAI, providing evidence-fused answers from FDA labels, FAERS, and PubMed.">
+
+    <!-- Fonts & Icons -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        :root {
+            --bg-color: #080B10;
+            --card-bg: rgba(17, 24, 39, 0.6);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-primary: #F3F4F6;
+            --text-secondary: #9CA3AF;
+            --primary: #3B82F6;
+            --primary-glow: rgba(59, 130, 246, 0.15);
+            --secondary: #8B5CF6;
+            --secondary-glow: rgba(139, 92, 246, 0.15);
+            --emerald: #10B981;
+            --emerald-glow: rgba(16, 185, 129, 0.15);
+            --yellow: #F59E0B;
+            --purple-gradient: linear-gradient(135deg, #3B82F6 0%, #8B5CF6 50%, #EC4899 100%);
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        h1, h2, h3 {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #080B10;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #1F2937;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #374151;
+        }
+
+        /* Glowing background blobs */
+        .blob-container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            z-index: -1;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        .blob {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(100px);
+            opacity: 0.15;
+            animation: float-blob 20s infinite alternate ease-in-out;
+        }
+
+        .blob-1 {
+            background: var(--primary);
+            width: 40vw;
+            height: 40vw;
+            top: -10vw;
+            right: -5vw;
+        }
+
+        .blob-2 {
+            background: var(--secondary);
+            width: 35vw;
+            height: 35vw;
+            top: 30vw;
+            left: -10vw;
+            animation-duration: 25s;
+        }
+
+        .blob-3 {
+            background: var(--emerald);
+            width: 30vw;
+            height: 30vw;
+            bottom: 10vw;
+            right: 10vw;
+            animation-duration: 18s;
+        }
+
+        @keyframes float-blob {
+            0% { transform: translate(0, 0) scale(1); }
+            100% { transform: translate(5%, 5%) scale(1.1); }
+        }
+
+        /* Navigation */
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.5rem 8%;
+            border-bottom: 1px solid var(--border-color);
+            background: rgba(8, 11, 16, 0.7);
+            backdrop-filter: blur(12px);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            text-decoration: none;
+            color: var(--text-primary);
+            font-size: 1.5rem;
+            font-weight: 800;
+            font-family: 'Outfit', sans-serif;
+            background: var(--purple-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo i {
+            -webkit-text-fill-color: initial;
+            background: var(--purple-gradient);
+            padding: 8px;
+            border-radius: 10px;
+            color: white;
+            font-size: 1.2rem;
+            box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3);
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            list-style: none;
+        }
+
+        .nav-links a {
+            text-decoration: none;
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            font-weight: 500;
+            transition: var(--transition);
+        }
+
+        .nav-links a:hover {
+            color: var(--text-primary);
+        }
+
+        .github-btn {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.6rem 1.2rem;
+            border-radius: 30px;
+            border: 1px solid var(--border-color);
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
+            font-weight: 600;
+            font-size: 0.9rem;
+            text-decoration: none;
+            transition: var(--transition);
+        }
+
+        .github-btn:hover {
+            background: var(--text-primary);
+            color: var(--bg-color);
+            border-color: var(--text-primary);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(255, 255, 255, 0.1);
+        }
+
+        /* Container & Layout */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 4rem 2rem;
+        }
+
+        /* Hero Section */
+        .hero {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            padding: 6rem 1rem 4rem;
+            position: relative;
+        }
+
+        .badge {
+            background: rgba(139, 92, 246, 0.15);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            color: #C084FC;
+            padding: 0.35rem 1rem;
+            border-radius: 30px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 2rem;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            box-shadow: 0 2px 10px rgba(139, 92, 246, 0.1);
+        }
+
+        .hero h1 {
+            font-size: clamp(2.5rem, 5vw, 4.5rem);
+            line-height: 1.15;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(to right, #FFFFFF 30%, #D1D5DB 60%, #9CA3AF 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero h1 span {
+            background: var(--purple-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            position: relative;
+        }
+
+        .hero p {
+            font-size: clamp(1.1rem, 2.5vw, 1.35rem);
+            color: var(--text-secondary);
+            max-width: 800px;
+            margin-bottom: 3rem;
+            font-weight: 300;
+        }
+
+        .cta-buttons {
+            display: flex;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-bottom: 5rem;
+        }
+
+        .btn-primary {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.9rem 2rem;
+            border-radius: 30px;
+            background: var(--purple-gradient);
+            color: white;
+            font-weight: 600;
+            font-size: 1.05rem;
+            text-decoration: none;
+            box-shadow: 0 4px 20px rgba(139, 92, 246, 0.4);
+            transition: var(--transition);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 25px rgba(139, 92, 246, 0.6);
+        }
+
+        .btn-secondary {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.9rem 2rem;
+            border-radius: 30px;
+            border: 1px solid var(--border-color);
+            background: rgba(255, 255, 255, 0.03);
+            color: var(--text-primary);
+            font-weight: 600;
+            font-size: 1.05rem;
+            text-decoration: none;
+            transition: var(--transition);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.08);
+            transform: translateY(-3px);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Interactive Simulator (Terminal) */
+        .terminal-wrapper {
+            width: 100%;
+            max-width: 900px;
+            border-radius: 12px;
+            background: rgba(10, 15, 26, 0.8);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), 0 0 40px rgba(59, 130, 246, 0.08);
+            overflow: hidden;
+            text-align: left;
+            margin-bottom: 2rem;
+            position: relative;
+        }
+
+        .terminal-header {
+            background: rgba(17, 24, 39, 0.9);
+            padding: 0.75rem 1.25rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .terminal-dots {
+            display: flex;
+            gap: 6px;
+        }
+
+        .terminal-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .dot-red { background: #EF4444; }
+        .dot-yellow { background: #F59E0B; }
+        .dot-green { background: #10B981; }
+
+        .terminal-title {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            font-family: 'Fira Code', monospace;
+            font-weight: 500;
+        }
+
+        .terminal-body {
+            padding: 1.5rem;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.9rem;
+            min-height: 380px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            background: linear-gradient(180deg, rgba(8,11,16,0.3) 0%, rgba(17,24,39,0.3) 100%);
+        }
+
+        .terminal-output {
+            flex-grow: 1;
+            overflow-y: auto;
+            margin-bottom: 1rem;
+        }
+
+        .terminal-line {
+            margin-bottom: 0.75rem;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+
+        .terminal-prompt {
+            color: var(--primary);
+            font-weight: bold;
+        }
+
+        .terminal-router-step {
+            color: var(--secondary);
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+
+        .terminal-evidence {
+            color: var(--emerald);
+            padding-left: 1.5rem;
+            border-left: 2px solid rgba(16, 185, 129, 0.3);
+            margin: 0.5rem 0 0.5rem 0.5rem;
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+
+        .terminal-answer {
+            color: var(--text-primary);
+            margin-top: 0.75rem;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.02);
+            padding: 0.75rem;
+            border: 1px dashed rgba(255, 255, 255, 0.05);
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+
+        .terminal-input-container {
+            display: flex;
+            align-items: center;
+            border-top: 1px solid var(--border-color);
+            padding-top: 1rem;
+            gap: 0.5rem;
+        }
+
+        .terminal-user-input {
+            background: transparent;
+            border: none;
+            outline: none;
+            color: var(--text-primary);
+            font-family: 'Fira Code', monospace;
+            font-size: 0.9rem;
+            flex-grow: 1;
+        }
+
+        /* Clickable simulation questions */
+        .sample-questions {
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+            justify-content: center;
+            width: 100%;
+            max-width: 900px;
+            margin-bottom: 6rem;
+        }
+
+        .sample-btn {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .sample-btn:hover {
+            background: rgba(59, 130, 246, 0.1);
+            border-color: rgba(59, 130, 246, 0.3);
+            color: var(--text-primary);
+            transform: translateY(-2px);
+        }
+
+        /* Section styles */
+        section {
+            padding: 6rem 0;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .section-header {
+            text-align: center;
+            margin-bottom: 4rem;
+        }
+
+        .section-header h2 {
+            font-size: 2.25rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, #FFF 0%, #D1D5DB 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .section-header p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            max-width: 600px;
+            margin: 0 auto;
+            font-weight: 300;
+        }
+
+        /* Architecture Section (Node net styling) */
+        .arch-container {
+            display: grid;
+            grid-template-columns: 1fr 1.5fr;
+            gap: 4rem;
+            align-items: center;
+        }
+
+        @media (max-width: 900px) {
+            .arch-container {
+                grid-template-columns: 1fr;
+                gap: 3rem;
+            }
+        }
+
+        .arch-graph {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            position: relative;
+        }
+
+        .arch-node {
+            background: rgba(17, 24, 39, 0.7);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.25rem 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 1.25rem;
+            transition: var(--transition);
+            cursor: pointer;
+            position: relative;
+            z-index: 2;
+        }
+
+        .arch-node::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            border-radius: 12px;
+            padding: 1px;
+            background: linear-gradient(to bottom, rgba(255,255,255,0.1), rgba(255,255,255,0.02));
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            pointer-events: none;
+        }
+
+        .arch-node:hover, .arch-node.active {
+            border-color: rgba(139, 92, 246, 0.4);
+            background: rgba(139, 92, 246, 0.05);
+            box-shadow: 0 0 20px rgba(139, 92, 246, 0.1);
+        }
+
+        .arch-node-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            color: white;
+        }
+
+        .icon-user { background: rgba(59, 130, 246, 0.2); color: #60A5FA; border: 1px solid rgba(59, 130, 246, 0.3); }
+        .icon-router { background: rgba(139, 92, 246, 0.2); color: #A78BFA; border: 1px solid rgba(139, 92, 246, 0.3); }
+        .icon-mcp { background: rgba(16, 185, 129, 0.2); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.3); }
+        .icon-fuse { background: rgba(245, 158, 11, 0.2); color: #FBBF24; border: 1px solid rgba(245, 158, 11, 0.3); }
+        .icon-openai { background: rgba(236, 72, 153, 0.2); color: #F472B6; border: 1px solid rgba(236, 72, 153, 0.3); }
+
+        .arch-node-details h4 {
+            font-size: 1.05rem;
+            font-family: 'Outfit', sans-serif;
+            margin-bottom: 0.15rem;
+        }
+
+        .arch-node-details p {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+
+        .arch-connector-line {
+            width: 2px;
+            height: 25px;
+            background: linear-gradient(to bottom, var(--border-color), rgba(255, 255, 255, 0.02));
+            margin-left: 36px;
+        }
+
+        .arch-connector-line.active {
+            background: linear-gradient(to bottom, var(--secondary), var(--emerald));
+        }
+
+        .arch-details-card {
+            background: rgba(17, 24, 39, 0.5);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 2rem;
+            backdrop-filter: blur(12px);
+            min-height: 300px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .arch-details-card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            color: #C084FC;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .arch-details-card p {
+            color: var(--text-secondary);
+            margin-bottom: 1.5rem;
+            font-size: 1.05rem;
+            line-height: 1.7;
+        }
+
+        .arch-details-features {
+            list-style: none;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 0.75rem;
+        }
+
+        .arch-details-features li {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 0.95rem;
+        }
+
+        .arch-details-features li i {
+            color: var(--emerald);
+        }
+
+        /* Evidence Sources / MCP section */
+        .evidence-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
+        }
+
+        .source-card {
+            background: rgba(17, 24, 39, 0.5);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 2.25rem;
+            position: relative;
+            transition: var(--transition);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .source-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 4px; height: 100%;
+        }
+
+        .source-card.fda-label::before { background: var(--primary); }
+        .source-card.faers::before { background: var(--secondary); }
+        .source-card.pubmed::before { background: var(--emerald); }
+
+        .source-card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(255, 255, 255, 0.15);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .source-card h3 {
+            font-size: 1.35rem;
+            margin-bottom: 1rem;
+            margin-top: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .source-card h3 i {
+            font-size: 1.5rem;
+        }
+
+        .source-card.fda-label h3 i { color: var(--primary); }
+        .source-card.faers h3 i { color: var(--secondary); }
+        .source-card.pubmed h3 i { color: var(--emerald); }
+
+        .source-card p {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            margin-bottom: 1.5rem;
+            flex-grow: 1;
+        }
+
+        .source-meta {
+            font-size: 0.8rem;
+            font-family: 'Fira Code', monospace;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 0.6rem 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        /* Tech Stack (Interactive cards) */
+        .tech-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .tech-card {
+            background: rgba(17, 24, 39, 0.4);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.75rem;
+            text-align: center;
+            transition: var(--transition);
+        }
+
+        .tech-card:hover {
+            background: rgba(255, 255, 255, 0.03);
+            border-color: rgba(255, 255, 255, 0.12);
+            transform: scale(1.03);
+        }
+
+        .tech-card i, .tech-card span.tech-icon {
+            font-size: 2.25rem;
+            margin-bottom: 1rem;
+            display: block;
+            background: var(--purple-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .tech-card span.tech-icon {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 800;
+            -webkit-text-fill-color: initial;
+            background: var(--purple-gradient);
+            padding: 4px;
+            border-radius: 8px;
+            color: white;
+            width: fit-content;
+            margin: 0 auto 1rem;
+            font-size: 1.25rem;
+        }
+
+        .tech-card h4 {
+            font-size: 1.15rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .tech-card p {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+
+        /* Quick Start Section */
+        .quickstart-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 3rem;
+        }
+
+        @media (max-width: 850px) {
+            .quickstart-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .qs-steps {
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        .qs-step {
+            display: flex;
+            gap: 1.5rem;
+        }
+
+        .qs-num {
+            width: 36px;
+            height: 36px;
+            background: rgba(139, 92, 246, 0.15);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #C084FC;
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+
+        .qs-content h4 {
+            font-size: 1.15rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .qs-content p {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        .code-box {
+            background: rgba(10, 15, 26, 0.8);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 1.5rem;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.85rem;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .code-header {
+            display: flex;
+            justify-content: space-between;
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+            font-size: 0.75rem;
+        }
+
+        .copy-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: var(--transition);
+        }
+
+        .copy-btn:hover {
+            color: var(--text-primary);
+        }
+
+        .code-content {
+            color: var(--text-primary);
+            white-space: pre-wrap;
+            line-height: 1.5;
+        }
+
+        .code-content span.comment {
+            color: #6B7280;
+        }
+
+        /* Footer */
+        footer {
+            border-top: 1px solid var(--border-color);
+            padding: 4rem 2rem;
+            text-align: center;
+            background: rgba(8, 11, 16, 0.9);
+            position: relative;
+        }
+
+        .footer-logo {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 800;
+            font-size: 1.75rem;
+            background: var(--purple-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 1rem;
+            display: inline-block;
+        }
+
+        .footer-text {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            max-width: 500px;
+            margin: 0 auto 2rem;
+        }
+
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            list-style: none;
+            margin-bottom: 2rem;
+        }
+
+        .footer-links a {
+            text-decoration: none;
+            color: var(--text-secondary);
+            transition: var(--transition);
+        }
+
+        .footer-links a:hover {
+            color: var(--text-primary);
+        }
+
+        .copyright {
+            font-size: 0.8rem;
+            color: rgba(156, 163, 175, 0.4);
+        }
+
+        /* Keyframes */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            nav {
+                padding: 1rem 5%;
+            }
+            .nav-links {
+                display: none; /* simple hidden for mobile for now */
+            }
+            .hero {
+                padding-top: 4rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Glowing Background elements -->
+    <div class="blob-container">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <!-- Navigation Header -->
+    <nav>
+        <a href="#" class="logo">
+            <i class="fa-solid fa-flask"></i> ChemBot
+        </a>
+        <ul class="nav-links">
+            <li><a href="#features">Features</a></li>
+            <li><a href="#architecture">Architecture</a></li>
+            <li><a href="#mcp">MCP Servers</a></li>
+            <li><a href="#quickstart">Quick Start</a></li>
+        </ul>
+        <a href="https://github.com/IshaanSD/ChemBot" class="github-btn" target="_blank" rel="noopener noreferrer">
+            <i class="fa-brands fa-github"></i> GitHub
+        </a>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="container">
+        
+        <!-- Hero Section -->
+        <section class="hero" style="border-top: none;">
+            <div class="badge">Model Context Protocol</div>
+            <h1>A CLI Biomedical Q&A Agent with <span>LangGraph</span> & <span>MCP</span></h1>
+            <p>ChemBot intelligently queries, aggregates, and fuses evidence from multiple regulatory and scientific databases to provide grounded answers to clinical and pharmacological questions.</p>
+            
+            <div class="cta-buttons">
+                <a href="#quickstart" class="btn-primary">
+                    <i class="fa-solid fa-terminal"></i> Get Started
+                </a>
+                <a href="https://github.com/IshaanSD/ChemBot" class="btn-secondary" target="_blank" rel="noopener noreferrer">
+                    <i class="fa-brands fa-github"></i> View GitHub Repository
+                </a>
+            </div>
+
+            <!-- Terminal Simulator -->
+            <div class="terminal-wrapper">
+                <div class="terminal-header">
+                    <div class="terminal-dots">
+                        <div class="terminal-dot dot-red"></div>
+                        <div class="terminal-dot dot-yellow"></div>
+                        <div class="terminal-dot dot-green"></div>
+                    </div>
+                    <div class="terminal-title">chembot — session</div>
+                    <div style="width: 42px;"></div> <!-- placeholder to center title -->
+                </div>
+                <div class="terminal-body">
+                    <div class="terminal-output" id="terminalOutput">
+                        <div class="terminal-line"><span style="color: #6B7280;"># ChemBot v1.0.0 is initialized.</span></div>
+                        <div class="terminal-line"><span style="color: #6B7280;"># Vector store connected to ChromaDB local storage.</span></div>
+                        <div class="terminal-line"><span style="color: #6B7280;"># Click one of the questions below to simulate query routing.</span></div>
+                    </div>
+                    <div class="terminal-input-container">
+                        <span class="terminal-prompt">chembot&gt;</span>
+                        <input type="text" class="terminal-user-input" id="terminalInput" placeholder="Select a question below to see execution trace..." readonly>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Interactive Sample Queries -->
+            <div class="sample-questions">
+                <button class="sample-btn" onclick="runSimulation(0)">
+                    <i class="fa-solid fa-pills"></i> Ibuprofen contraindications?
+                </button>
+                <button class="sample-btn" onclick="runSimulation(1)">
+                    <i class="fa-solid fa-syringe"></i> Ozempic adverse events?
+                </button>
+                <button class="sample-btn" onclick="runSimulation(2)">
+                    <i class="fa-solid fa-dna"></i> Semaglutide & Alzheimer's studies?
+                </button>
+                <button class="sample-btn" onclick="runSimulation(3)">
+                    <i class="fa-solid fa-child"></i> Ibuprofen during pregnancy?
+                </button>
+            </div>
+        </section>
+
+        <!-- Technology Stack Cards -->
+        <section id="features">
+            <div class="section-header">
+                <h2>Built on a State-of-the-Art Stack</h2>
+                <p>ChemBot leverages modern AI orchestrators, vector storage, and new standard protocols.</p>
+            </div>
+            
+            <div class="tech-grid">
+                <div class="tech-card">
+                    <span class="tech-icon"><i class="fa-solid fa-network-wired" style="color: inherit; background: none; -webkit-text-fill-color: initial; font-size: inherit; margin: 0;"></i></span>
+                    <h4>LangGraph</h4>
+                    <p>Orchestrates multi-route query fan-out and merges multiple asynchronous retrieval branches.</p>
+                </div>
+                <div class="tech-card">
+                    <span class="tech-icon">MCP</span>
+                    <h4>Model Context Protocol</h4>
+                    <p>Exposes tools via openFDA and PubMed servers with isolated, standardized JSON-RPC schemas.</p>
+                </div>
+                <div class="tech-card">
+                    <span class="tech-icon"><i class="fa-solid fa-database" style="color: inherit; background: none; -webkit-text-fill-color: initial; font-size: inherit; margin: 0;"></i></span>
+                    <h4>ChromaDB</h4>
+                    <p>Local vector store caching prior queries and regulatory definitions to cut external API roundtrips.</p>
+                </div>
+                <div class="tech-card">
+                    <span class="tech-icon"><i class="fa-solid fa-brain" style="color: inherit; background: none; -webkit-text-fill-color: initial; font-size: inherit; margin: 0;"></i></span>
+                    <h4>Embeddings</h4>
+                    <p>Uses Sentence Transformers locally to generate dense vectors for semantically indexing evidence.</p>
+                </div>
+                <div class="tech-card">
+                    <span class="tech-icon"><i class="fa-solid fa-microchip" style="color: inherit; background: none; -webkit-text-fill-color: initial; font-size: inherit; margin: 0;"></i></span>
+                    <h4>OpenAI GPT-4</h4>
+                    <p>Acts as the reasoning model for routing decisions and outputs answer fusion based purely on evidence.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Architecture Flow Diagram (Interactive Node Graph) -->
+        <section id="architecture">
+            <div class="section-header">
+                <h2>Multi-Branch Routing Pipeline</h2>
+                <p>Click on any node in the execution graph to see detailed information on what it does.</p>
+            </div>
+
+            <div class="arch-container">
+                <!-- Node list (left) -->
+                <div class="arch-graph">
+                    <div class="arch-node active" id="node-user" onclick="selectArchNode('user')">
+                        <div class="arch-node-icon icon-user">
+                            <i class="fa-solid fa-user"></i>
+                        </div>
+                        <div class="arch-node-details">
+                            <h4>User Query Input</h4>
+                            <p>Receives natural language clinical or pharmacological queries.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="arch-connector-line active" id="line-user"></div>
+
+                    <div class="arch-node" id="node-router" onclick="selectArchNode('router')">
+                        <div class="arch-node-icon icon-router">
+                            <i class="fa-solid fa-route"></i>
+                        </div>
+                        <div class="arch-node-details">
+                            <h4>LangGraph Router</h4>
+                            <p>Determines routing requirements and dynamically selects database branches.</p>
+                        </div>
+                    </div>
+
+                    <div class="arch-connector-line" id="line-router"></div>
+
+                    <div class="arch-node" id="node-mcp" onclick="selectArchNode('mcp')">
+                        <div class="arch-node-icon icon-mcp">
+                            <i class="fa-solid fa-server"></i>
+                        </div>
+                        <div class="arch-node-details">
+                            <h4>MCP Servers (openFDA / PubMed)</h4>
+                            <p>Spawns stdio servers, mapping parameters to API search requests.</p>
+                        </div>
+                    </div>
+
+                    <div class="arch-connector-line" id="line-mcp"></div>
+
+                    <div class="arch-node" id="node-fuse" onclick="selectArchNode('fuse')">
+                        <div class="arch-node-icon icon-fuse">
+                            <i class="fa-solid fa-compress"></i>
+                        </div>
+                        <div class="arch-node-details">
+                            <h4>Evidence Fusion Node</h4>
+                            <p>Aggregates retrieved labels, side effects, and academic abstracts.</p>
+                        </div>
+                    </div>
+
+                    <div class="arch-connector-line" id="line-fuse"></div>
+
+                    <div class="arch-node" id="node-openai" onclick="selectArchNode('openai')">
+                        <div class="arch-node-icon icon-openai">
+                            <i class="fa-solid fa-robot"></i>
+                        </div>
+                        <div class="arch-node-details">
+                            <h4>LLM Answer Generation</h4>
+                            <p>Generates final answers strictly utilizing retrieved evidence context.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Explanation details (right) -->
+                <div class="arch-details-card" id="archDetailsCard">
+                    <h3><i class="fa-solid fa-user"></i> User Query Input</h3>
+                    <p>The entrypoint to the application. ChemBot accepts any free-form biomedical question from the terminal. The framework leverages vector indexes to check if the question context is already partiallycached, avoiding unnecessary downstream queries when possible.</p>
+                    <ul class="arch-details-features">
+                        <li><i class="fa-solid fa-circle-check"></i> Standard standard terminal read-eval-print loop</li>
+                        <li><i class="fa-solid fa-circle-check"></i> Optional debug levels for tracing raw HTTP and JSON-RPC</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Evidence Sources / MCP details -->
+        <section id="mcp">
+            <div class="section-header">
+                <h2>Connected Evidence Databases</h2>
+                <p>ChemBot queries official, highly specific data using Model Context Protocol Servers.</p>
+            </div>
+
+            <div class="evidence-grid">
+                <!-- FDA Drug Labels -->
+                <div class="source-card fda-label">
+                    <h3>FDA Drug Labels <i class="fa-solid fa-prescription-bottle-medical"></i></h3>
+                    <p>Accesses official prescribing information, warnings, ingredients, dosage instructions, and active contraindications straight from regulatory databases.</p>
+                    <div class="source-meta">
+                        <strong>Tool:</strong> search_drug_labels<br>
+                        <strong>Endpoint:</strong> api.fda.gov/drug/label
+                    </div>
+                </div>
+
+                <!-- FAERS -->
+                <div class="source-card faers">
+                    <h3>FDA Adverse Events (FAERS) <i class="fa-solid fa-triangle-exclamation"></i></h3>
+                    <p>Queries millions of self-reported adverse clinical events and product problems submitted to the FDA, yielding active post-market surveillance statistics.</p>
+                    <div class="source-meta">
+                        <strong>Tool:</strong> search_adverse_events<br>
+                        <strong>Endpoint:</strong> api.fda.gov/drug/event
+                    </div>
+                </div>
+
+                <!-- PubMed -->
+                <div class="source-card pubmed">
+                    <h3>NCBI PubMed Literature <i class="fa-solid fa-book-medical"></i></h3>
+                    <p>Retrieves academic, peer-reviewed biomedical literature abstracts, clinical trials, meta-analyses, and systematic reviews via the NCBI Entrez API.</p>
+                    <div class="source-meta">
+                        <strong>Tool:</strong> search_pubmed, fetch_abstracts<br>
+                        <strong>Endpoint:</strong> eutils.ncbi.nlm.nih.gov
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Quick Start Setup -->
+        <section id="quickstart">
+            <div class="section-header">
+                <h2>Getting Started</h2>
+                <p>Set up and launch the ChemBot command line interface locally in minutes.</p>
+            </div>
+
+            <div class="quickstart-grid">
+                <div class="qs-steps">
+                    <div class="qs-step">
+                        <div class="qs-num">1</div>
+                        <div class="qs-content">
+                            <h4>Clone the Repository</h4>
+                            <p>Get the latest version of ChemBot code and submodules directly from GitHub.</p>
+                        </div>
+                    </div>
+                    <div class="qs-step">
+                        <div class="qs-num">2</div>
+                        <div class="qs-content">
+                            <h4>Install Dependencies</h4>
+                            <p>Configure packages with pip or your favorite Python environment manager.</p>
+                        </div>
+                    </div>
+                    <div class="qs-step">
+                        <div class="qs-num">3</div>
+                        <div class="qs-content">
+                            <h4>Configure Keys & Run</h4>
+                            <p>Set your OpenAI key and run the CLI. ChemBot automatically provisions the MCP servers.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Code installation blocks -->
+                <div class="code-box">
+                    <div class="code-header">
+                        <span>Terminal — Installation</span>
+                        <button class="copy-btn" onclick="copyCode()"><i class="fa-regular fa-copy"></i> Copy</button>
+                    </div>
+                    <div class="code-content" id="codeText"><span class="comment"># Clone and enter the repository</span>
+git clone https://github.com/IshaanSD/ChemBot.git
+cd ChemBot
+
+<span class="comment"># Install requirements</span>
+pip install -r requirements.txt
+
+<span class="comment"># Export credentials</span>
+export OPENAI_API_KEY="your-openai-api-key"
+export NCBI_EMAIL="your-email@example.com"
+
+<span class="comment"># Run ChemBot CLI</span>
+python -m chembot.graph_cli --chroma_dir ./chroma_db</div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-logo">ChemBot</div>
+        <p class="footer-text">An advanced biomedical information retrieval graph using MCP server abstractions to ground LLM reasoning on strict evidence.</p>
+        <ul class="footer-links">
+            <li><a href="https://github.com/IshaanSD/ChemBot" target="_blank" rel="noopener noreferrer">GitHub Repository</a></li>
+            <li><a href="https://github.com/IshaanSD/ChemBot/blob/main/README.md" target="_blank" rel="noopener noreferrer">Documentation</a></li>
+            <li><a href="https://modelcontextprotocol.io" target="_blank" rel="noopener noreferrer">About MCP</a></li>
+        </ul>
+        <div class="copyright">&copy; 2026 ChemBot Project. Released under the MIT License.</div>
+    </footer>
+
+    <!-- Interactive script for simulation -->
+    <script>
+        const simulations = [
+            {
+                question: "What are the contraindications for ibuprofen?",
+                router: "Routing → FDA Labels branch selected.",
+                evidence: "Retrieved FDA Drug Label (Advil/Ibuprofen): Contraindicated in patients with known hypersensitivity, after coronary artery bypass graft (CABG) surgery, and in the third trimester of pregnancy.",
+                answer: "Ibuprofen is contraindicated in individuals with known hypersensitivity to NSAIDs, post-CABG surgery, and during the third trimester of pregnancy due to risks of premature closure of the fetal ductus arteriosus."
+            },
+            {
+                question: "What adverse events have been reported for Ozempic?",
+                router: "Routing → FAERS Adverse Events branch selected.",
+                evidence: "Retrieved 3 FAERS Records (Semaglutide): Frequent reports of gastrointestinal disorders (nausea: 42%, vomiting: 21%, diarrhea: 18%) and rare cases of acute pancreatitis.",
+                answer: "The most common adverse events reported in the FAERS database for Ozempic (semaglutide) are gastrointestinal symptoms including nausea, vomiting, and diarrhea. Severe cases of pancreatitis have also been reported."
+            },
+            {
+                question: "What recent studies exist on semaglutide and Alzheimer's?",
+                router: "Routing → PubMed Literature search selected.",
+                evidence: "Retrieved PubMed PMID 3847291: 'GLP-1 receptor agonists like semaglutide demonstrate neuroprotective properties and reduction of tau phosphorylation in murine models.'",
+                answer: "Recent clinical literature suggest that GLP-1 receptor agonists (including semaglutide) may offer neuroprotective benefits, with ongoing phase III clinical trials (EVOKE/EVOKE Plus) evaluating cognitive outcomes in early Alzheimer's disease."
+            },
+            {
+                question: "Is ibuprofen safe during pregnancy?",
+                router: "Routing → Multi-Route: FDA Labels + PubMed branches selected.",
+                evidence: "1. FDA Label: Avoid use starting at 30 weeks gestation.\n2. PubMed (PMID 372810): Association shown between late NSAID exposure and oligohydramnios or premature fetal ductus closure.",
+                answer: "No, ibuprofen is not recommended, particularly in the third trimester (from week 30 onwards). Evidence from FDA labels and peer-reviewed literature shows it increases the risk of premature closing of the fetal ductus arteriosus and renal dysfunction in the fetus."
+            }
+        ];
+
+        let typingTimeout;
+
+        function runSimulation(index) {
+            const sim = simulations[index];
+            const outputDiv = document.getElementById("terminalOutput");
+            const inputField = document.getElementById("terminalInput");
+
+            // Reset current typing/timeouts
+            clearTimeout(typingTimeout);
+            outputDiv.innerHTML = "";
+            inputField.value = "";
+
+            // Set user input value simulating typing
+            let charIndex = 0;
+            function typeInput() {
+                if (charIndex < sim.question.length) {
+                    inputField.value += sim.question[charIndex];
+                    charIndex++;
+                    typingTimeout = setTimeout(typeInput, 20);
+                } else {
+                    // Start routing step
+                    typingTimeout = setTimeout(() => {
+                        appendLine(`<span class="terminal-router-step">[LANGGRAPH] Running query router...</span>`);
+                        typingTimeout = setTimeout(() => {
+                            appendLine(`<span class="terminal-router-step">[LANGGRAPH] ${sim.router}</span>`);
+                            
+                            // Start evidence retrieval step
+                            typingTimeout = setTimeout(() => {
+                                appendLine(`<span class="terminal-evidence">[MCP RETRIEVAL] Invoking server tools...</span>`);
+                                typingTimeout = setTimeout(() => {
+                                    appendLine(`<span class="terminal-evidence">${sim.evidence.replace(/\n/g, '<br>')}</span>`);
+                                    
+                                    // Start answer generation step
+                                    typingTimeout = setTimeout(() => {
+                                        appendLine(`<span class="terminal-router-step">[LANGGRAPH] Fusing evidence and compiling final answer...</span>`);
+                                        typingTimeout = setTimeout(() => {
+                                            appendLine(`<div class="terminal-answer"><strong>ChemBot:</strong> ${sim.answer}</div>`);
+                                        }, 800);
+                                    }, 800);
+                                }, 1000);
+                            }, 600);
+                        }, 600);
+                    }, 400);
+                }
+            }
+
+            typeInput();
+        }
+
+        function appendLine(content) {
+            const outputDiv = document.getElementById("terminalOutput");
+            const line = document.createElement("div");
+            line.className = "terminal-line";
+            line.innerHTML = content;
+            outputDiv.appendChild(line);
+            outputDiv.scrollTop = outputDiv.scrollHeight;
+        }
+
+        // Architecture description details map
+        const nodeData = {
+            user: {
+                title: "User Query Input",
+                desc: "The entrypoint to the application. ChemBot accepts any free-form biomedical question from the terminal. The framework leverages vector indexes to check if the question context is already cached, avoiding unnecessary downstream queries when possible.",
+                features: ["Standard terminal read-eval-print loop", "Optional debug levels for tracing raw HTTP and JSON-RPC"]
+            },
+            router: {
+                title: "LangGraph Router",
+                desc: "Powered by GPT-4, the router evaluates the incoming question to determine which medical databases are needed. It supports single, multiple, or no routes (if standard definitions are requested directly).",
+                features: ["Dynamic fan-out to multiple parallel branches", "Zero external network calls if routed to empty or local nodes"]
+            },
+            mcp: {
+                title: "Model Context Protocol",
+                desc: "ChemBot invokes FastMCP stdio servers running locally. These servers translate tool definitions (like search_drug_labels) into structured JSON-RPC calls, fetch clean data from openFDA and PubMed endpoints, and return standard text payloads.",
+                features: ["Isolated subprocess execution", "Robust error catching and rate limiting"]
+            },
+            fuse: {
+                title: "Evidence Fusion Node",
+                desc: "Once all synchronous/asynchronous retrievals complete, this node merges the raw JSON objects and abstracts. It deduplicates and structures the records by clinical source, prepping a clean context block.",
+                features: ["Integrates regulatory labels, post-market adverse events, and abstracts", "Formats clean source attribution keys"]
+            },
+            openai: {
+                title: "LLM Answer Generation",
+                desc: "The model is provided with the formatted source evidence context. Guided by a strict prompt, it synthesizes the final response. It is strictly constrained to output facts supported ONLY by the gathered evidence, preventing hallucinations.",
+                features: ["High temperature safety controls", "Rigorous citation alignment with the evidence source"]
+            }
+        };
+
+        function selectArchNode(nodeKey) {
+            // Update active node styling
+            document.querySelectorAll('.arch-node').forEach(node => node.classList.remove('active'));
+            document.querySelectorAll('.arch-connector-line').forEach(line => line.classList.remove('active'));
+            
+            document.getElementById(`node-${nodeKey}`).classList.add('active');
+            
+            // Highlight connector lines leading up to this node
+            const keys = ['user', 'router', 'mcp', 'fuse', 'openai'];
+            const activeIndex = keys.indexOf(nodeKey);
+            for (let i = 0; i < activeIndex; i++) {
+                document.getElementById(`line-${keys[i]}`).classList.add('active');
+            }
+
+            // Update explanation card
+            const data = nodeData[nodeKey];
+            const card = document.getElementById('archDetailsCard');
+            
+            let iconClass = '';
+            if (nodeKey === 'user') iconClass = 'fa-user';
+            else if (nodeKey === 'router') iconClass = 'fa-route';
+            else if (nodeKey === 'mcp') iconClass = 'fa-server';
+            else if (nodeKey === 'fuse') iconClass = 'fa-compress';
+            else if (nodeKey === 'openai') iconClass = 'fa-robot';
+
+            let featuresHtml = '';
+            data.features.forEach(feat => {
+                featuresHtml += `<li><i class="fa-solid fa-circle-check"></i> ${feat}</li>`;
+            });
+
+            card.innerHTML = `
+                <h3><i class="fa-solid ${iconClass}"></i> ${data.title}</h3>
+                <p>${data.desc}</p>
+                <ul class="arch-details-features">
+                    ${featuresHtml}
+                </ul>
+            `;
+        }
+
+        // Copy install commands
+        function copyCode() {
+            const codeText = document.getElementById("codeText").innerText;
+            navigator.clipboard.writeText(codeText).then(() => {
+                const btn = document.querySelector(".copy-btn");
+                btn.innerHTML = `<i class="fa-solid fa-check" style="color: #10B981;"></i> Copied!`;
+                setTimeout(() => {
+                    btn.innerHTML = `<i class="fa-regular fa-copy"></i> Copy`;
+                }, 2000);
+            });
+        }
+    </script>
+</body>
+</html>
