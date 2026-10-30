@@ -26,6 +26,7 @@ Route = Literal["label", "event", "pubmed"]
 class AgentState(TypedDict):
     messages: Annotated[List, add_messages]
     retrieved: List[str]
+    sources: List[dict]
     routes: List[str]
     query_plan: Optional[QueryPlan]
     finished: bool
@@ -48,7 +49,7 @@ planner = QueryPlanner()
 # ----------------------------
 def start_node(state: AgentState) -> AgentState:
     # One-time welcome when the graph starts
-    return state | {"messages": [AIMessage(content=WELCOME)], "retrieved": [], "routes": [], "query_plan": None, "finished": False}
+    return state | {"messages": [AIMessage(content=WELCOME)], "retrieved": [], "sources": [], "routes": [], "query_plan": None, "finished": False}
 
 
 def human_node(state: AgentState) -> AgentState:
@@ -208,9 +209,17 @@ def evidence_fusion_node_factory(rag: RAGStore, k: int):
             source = h["meta"].get("source", "unknown")
             groups.setdefault(source, []).append(h)
 
-        # Build grouped context blocks
+        # Build grouped context blocks + a de-duplicated, structured source list.
+        # Each underlying document (a label section / FAERS report / PubMed article)
+        # becomes one source entry, tracking which excerpt numbers reference it so
+        # the answer's inline (Excerpt N) citations map back to a real citation.
         context_blocks = []
+        sources_map = {}  # doc key -> {"excerpts": [int], "line": str}
         excerpt_num = 1
+
+        def add_source(key: str, line: str, n: int):
+            entry = sources_map.setdefault(key, {"excerpts": [], "line": line})
+            entry["excerpts"].append(n)
 
         if groups.get("openfda_label"):
             context_blocks.append("=== FDA LABEL EVIDENCE ===")
@@ -224,6 +233,12 @@ def evidence_fusion_node_factory(rag: RAGStore, k: int):
                     f"effective_time={meta.get('effective_time')}\n"
                     f"{h['text']}"
                 )
+                add_source(
+                    f"label::{meta.get('set_id')}::{meta.get('section')}",
+                    f"FDA Label — {meta.get('drug_name')} "
+                    f"(section: {meta.get('section')}; effective {meta.get('effective_time')})",
+                    excerpt_num,
+                )
                 excerpt_num += 1
 
         if groups.get("openfda_event"):
@@ -236,6 +251,12 @@ def evidence_fusion_node_factory(rag: RAGStore, k: int):
                     f"safetyreportid={meta.get('safetyreportid')} "
                     f"receivedate={meta.get('receivedate')}\n"
                     f"{h['text']}"
+                )
+                add_source(
+                    f"event::{meta.get('safetyreportid')}",
+                    f"FAERS Adverse Event Report — ID {meta.get('safetyreportid')} "
+                    f"(received {meta.get('receivedate')})",
+                    excerpt_num,
                 )
                 excerpt_num += 1
 
@@ -252,9 +273,23 @@ def evidence_fusion_node_factory(rag: RAGStore, k: int):
                     f"year={meta.get('year')}\n"
                     f"{h['text']}"
                 )
+                pmid = meta.get("pmid") or ""
+                url = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/" if pmid else ""
+                title = (meta.get("title") or "").rstrip(". ")
+                add_source(
+                    f"pubmed::{pmid}",
+                    f"PubMed — PMID {pmid}: {title}. "
+                    f"{meta.get('journal')} ({meta.get('year')}). {url}".strip(),
+                    excerpt_num,
+                )
                 excerpt_num += 1
 
-        return state | {"retrieved": context_blocks}
+        sources = [
+            {"excerpts": v["excerpts"], "line": v["line"]}
+            for v in sources_map.values()
+        ]
+
+        return state | {"retrieved": context_blocks, "sources": sources}
     return node
 
 
@@ -289,7 +324,19 @@ def answer_node_factory(llm: ChatOpenAI):
             ),
         ]
         out = llm.invoke(messages)
-        return state | {"messages": [AIMessage(content=out.content)]}
+        answer = out.content
+
+        # Append an authoritative, verified Sources section built from the actual
+        # retrieved metadata (not model-generated), so every response shows its sources.
+        sources = state.get("sources") or []
+        if sources:
+            lines = ["", "---", "**Sources**"]
+            for s in sources:
+                excerpts = ", ".join(f"Excerpt {n}" for n in s["excerpts"])
+                lines.append(f"- [{excerpts}] {s['line']}")
+            answer = f"{answer}\n\n" + "\n".join(lines)
+
+        return state | {"messages": [AIMessage(content=answer)]}
     return node
 
 
@@ -442,7 +489,7 @@ def main():
 
     app = graph.compile()
 
-    state: AgentState = {"messages": [], "retrieved": [], "routes": [], "query_plan": None, "finished": False}
+    state: AgentState = {"messages": [], "retrieved": [], "sources": [], "routes": [], "query_plan": None, "finished": False}
     while True:
         state = app.invoke(state)
         if state.get("finished"):

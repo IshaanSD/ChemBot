@@ -1,6 +1,10 @@
 # ChromaDB vector store local database
 chroma_db/
 
+# MiniCheck model checkpoints (downloaded, ~GBs) and generated eval reports
+ckpts/
+eval_report.json
+
 # Python cache files
 **/__pycache__/
 *.py[cod]
