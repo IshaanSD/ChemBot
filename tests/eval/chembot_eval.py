@@ -262,7 +262,14 @@ class ChembotRunner:
         from langchain_openai import ChatOpenAI
 
         self.planner = QueryPlanner()
-        self.rag = RAGStore(args.chroma_dir, args.collection, args.st_model)
+        reranker = None
+        if not getattr(args, "disable_rerank", False):
+            from chembot.reranker import Reranker
+            reranker = Reranker(args.reranker_model)
+        self.rag = RAGStore(
+            args.chroma_dir, args.collection, args.st_model,
+            reranker=reranker, rerank_candidates=args.rerank_candidates,
+        )
 
         if args.use_direct_openfda:
             from chembot.openfda_client import OpenFDAClient
@@ -465,6 +472,9 @@ def main() -> None:
     ap.add_argument("--pubmed_limit", type=int, default=5)
     ap.add_argument("--chunk_chars", type=int, default=2200)
     ap.add_argument("--overlap", type=int, default=250)
+    ap.add_argument("--disable_rerank", action="store_true", help="Disable cross-encoder reranking")
+    ap.add_argument("--reranker_model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
+    ap.add_argument("--rerank_candidates", type=int, default=30)
     ap.add_argument("--disable_pubmed", action="store_true")
     ap.add_argument("--use_direct_openfda", action="store_true")
     ap.add_argument("--limit", type=int, default=0, help="only run the first N cases (0 = all)")
