@@ -4,7 +4,7 @@ ChemBot is a CLI biomedical Q&A agent built with:
 - **LangGraph** (graph-based agent control loop with multi-route fan-out)
 - **Model Context Protocol (MCP)** (server/client architecture wrapping openFDA, PubMed, and RxNorm)
 - **ChromaDB** (persistent local vector store)
-- **Sentence Transformers** (local embeddings)
+- **Sentence Transformers** (local embeddings + cross-encoder reranking)
 - **OpenAI** (LLM responses)
 
 ChemBot answers using ONLY retrieved evidence from three sources:
@@ -223,6 +223,9 @@ written to `eval_report.json`. The dataset lives in `tests/eval/datasets/chembot
 | `--pubmed_limit` | `5` | Max PubMed abstracts |
 | `--disable_pubmed` | `false` | Disable PubMed retrieval |
 | `--use_direct_openfda` | `false` | Use direct HTTP client (no MCP) |
+| `--disable_rerank` | `false` | Disable cross-encoder reranking |
+| `--reranker_model` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Cross-encoder reranker model |
+| `--rerank_candidates` | `30` | Dense candidates fetched before reranking to `--k` |
 | `--openai_model` | `gpt-4.1-mini` | OpenAI model |
 | `--temperature` | `0.2` | LLM temperature |
 | `--max_tokens` | `900` | LLM max tokens |

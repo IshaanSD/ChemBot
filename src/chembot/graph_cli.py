@@ -391,6 +391,11 @@ def main():
     ap.add_argument("--chunk_chars", type=int, default=2200)
     ap.add_argument("--overlap", type=int, default=250)
 
+    # Reranking (cross-encoder; retrieve wider then rerank to --k)
+    ap.add_argument("--disable_rerank", action="store_true", help="Disable cross-encoder reranking")
+    ap.add_argument("--reranker_model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
+    ap.add_argument("--rerank_candidates", type=int, default=30, help="Dense candidates fetched before reranking to --k")
+
     # OpenAI
     ap.add_argument("--openai_model", default="gpt-4.1-mini")
     ap.add_argument("--temperature", type=float, default=0.2)
@@ -398,7 +403,14 @@ def main():
 
     args = ap.parse_args()
 
-    rag = RAGStore(args.chroma_dir, args.collection, args.st_model, device=args.st_device)
+    reranker = None
+    if not args.disable_rerank:
+        from .reranker import Reranker
+        reranker = Reranker(args.reranker_model, device=args.st_device)
+    rag = RAGStore(
+        args.chroma_dir, args.collection, args.st_model, device=args.st_device,
+        reranker=reranker, rerank_candidates=args.rerank_candidates,
+    )
     if args.use_direct_openfda:
         fda = OpenFDAClient(api_key=args.openfda_api_key)
     else:
