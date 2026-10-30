@@ -176,8 +176,40 @@ def pubmed_retrieval_node_factory(
     return node
 
 
-def evidence_fusion_node_factory(rag: RAGStore, k: int):
-    """Retrieves top-k chunks from Chroma and groups them by evidence source."""
+_ROUTE_SOURCE = {"label": "openfda_label", "event": "openfda_event", "pubmed": "pubmed"}
+
+
+def _target_drug_terms(plan) -> set:
+    """Drug terms the answer should be about: normalized generics plus any brand/token
+    the planner mapped. Used to drop retrieved chunks that are about a different drug."""
+    terms = set()
+    if not plan:
+        return terms
+    for d in getattr(plan, "normalized_drugs", None) or []:
+        terms.add(d.lower())
+    for brand, generics in (getattr(plan, "drug_mappings", None) or {}).items():
+        terms.add(brand.lower())
+        for g in generics or []:
+            terms.add(g.lower())
+    return {t for t in terms if len(t) >= 3}
+
+
+def _hit_on_target(hit: dict, targets: set) -> bool:
+    """Match against each source's drug-IDENTITY field, not incidental mentions:
+    - PubMed: the title (an abstract may mention other drugs in passing).
+    - FDA label / FAERS: the chunk text, whose header carries the generic ingredient,
+      so a brand-named label (e.g. ENDOCET -> 'Generic: Oxycodone...') still matches."""
+    meta = hit.get("meta", {}) or {}
+    if meta.get("source") == "pubmed":
+        hay = str(meta.get("title", ""))
+    else:
+        hay = hit.get("text", "")
+    return any(t in hay.lower() for t in targets)
+
+
+def evidence_fusion_node_factory(rag: RAGStore, k: int, drug_filter: bool = True):
+    """Retrieve per selected source (honoring the router's routes) and drop chunks
+    about a different drug than the one asked about, then group by evidence source."""
     def node(state: AgentState) -> AgentState:
         q = last_user_text(state)
         if not q:
@@ -197,7 +229,25 @@ def evidence_fusion_node_factory(rag: RAGStore, k: int):
                     import sys
                     print(f"[RETRIEVAL DEBUG] Reformulated query for Chroma: '{search_query}' (original: '{q}')", file=sys.stderr)
 
-        hits = rag.retrieve(search_query, k=k)
+        # Per-source retrieval: only pull from the sources the router selected, so an
+        # event-only question never retrieves label chunks (and vice versa).
+        routes = state.get("routes") or ["label"]
+        sources = [_ROUTE_SOURCE[r] for r in routes if r in _ROUTE_SOURCE] or ["openfda_label"]
+        per_source_k = max(2, round(k / len(sources)))
+        hits = []
+        for src in sources:
+            hits.extend(rag.retrieve(search_query, k=per_source_k, where={"source": src}))
+
+        # Drug filter: drop hits that name a different drug than the query's target(s).
+        if drug_filter:
+            targets = _target_drug_terms(plan)
+            if targets:
+                on_target = [h for h in hits if _hit_on_target(h, targets)]
+                if os.environ.get("CHEMBOT_DEBUG") == "1" and len(on_target) != len(hits):
+                    import sys
+                    print(f"[FILTER DEBUG] drug filter kept {len(on_target)}/{len(hits)} hits (targets: {sorted(targets)})", file=sys.stderr)
+                if on_target:  # safety valve: keep unfiltered rather than return no evidence
+                    hits = on_target
 
         # Group by source
         groups = {
@@ -395,6 +445,7 @@ def main():
     ap.add_argument("--disable_rerank", action="store_true", help="Disable cross-encoder reranking")
     ap.add_argument("--reranker_model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
     ap.add_argument("--rerank_candidates", type=int, default=30, help="Dense candidates fetched before reranking to --k")
+    ap.add_argument("--disable_drug_filter", action="store_true", help="Disable dropping retrieved chunks about other drugs")
 
     # OpenAI
     ap.add_argument("--openai_model", default="gpt-4.1-mini")
@@ -460,7 +511,7 @@ def main():
             ),
         )
 
-    graph.add_node("evidence_fusion", evidence_fusion_node_factory(rag=rag, k=args.k))
+    graph.add_node("evidence_fusion", evidence_fusion_node_factory(rag=rag, k=args.k, drug_filter=not args.disable_drug_filter))
     graph.add_node("answer", answer_node_factory(llm=llm))
 
     # Flow
