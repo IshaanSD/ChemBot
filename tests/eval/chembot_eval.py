@@ -287,7 +287,7 @@ class ChembotRunner:
         self._event = event_retrieval_node_factory(self.rag, fda, args.event_limit, args.chunk_chars, args.overlap)
         if self.pubmed is not None:
             self._pubmed = pubmed_retrieval_node_factory(self.rag, self.pubmed, args.pubmed_limit, args.chunk_chars, args.overlap)
-        self._fusion = evidence_fusion_node_factory(self.rag, args.k)
+        self._fusion = evidence_fusion_node_factory(self.rag, args.k, drug_filter=not getattr(args, "disable_drug_filter", False))
         self._answer = answer_node_factory(
             ChatOpenAI(model=args.openai_model, temperature=args.temperature, max_tokens=args.max_tokens)
         )
@@ -475,6 +475,7 @@ def main() -> None:
     ap.add_argument("--disable_rerank", action="store_true", help="Disable cross-encoder reranking")
     ap.add_argument("--reranker_model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
     ap.add_argument("--rerank_candidates", type=int, default=30)
+    ap.add_argument("--disable_drug_filter", action="store_true")
     ap.add_argument("--disable_pubmed", action="store_true")
     ap.add_argument("--use_direct_openfda", action="store_true")
     ap.add_argument("--limit", type=int, default=0, help="only run the first N cases (0 = all)")

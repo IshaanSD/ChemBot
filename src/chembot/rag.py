@@ -20,10 +20,17 @@ class RAGStore:
         self.reranker = reranker
         self.rerank_candidates = rerank_candidates
 
-    def retrieve(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
+    def retrieve(self, query: str, k: int = 5, where: dict | None = None) -> List[Dict[str, Any]]:
         n_fetch = max(k, self.rerank_candidates) if self.reranker else k
         q_emb = self.st.encode([query], normalize_embeddings=True).tolist()[0]
-        out = self.col.query(query_embeddings=[q_emb], n_results=n_fetch, include=["documents", "metadatas", "distances"])
+        kwargs = {
+            "query_embeddings": [q_emb],
+            "n_results": n_fetch,
+            "include": ["documents", "metadatas", "distances"],
+        }
+        if where:
+            kwargs["where"] = where  # Chroma metadata filter, e.g. {"source": "pubmed"}
+        out = self.col.query(**kwargs)
         docs = out["documents"][0]
         metas = out["metadatas"][0]
         dists = out["distances"][0]
