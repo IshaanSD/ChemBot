@@ -52,6 +52,10 @@ class RxNormMCPClient:
     def _call_tool_sync(self, name: str, arguments: Dict[str, Any]) -> Any:
         if not self.session:
             raise RuntimeError("RxNorm MCP client is not connected.")
+
+        from .usage import RXNORM, record_provider_call
+
+        record_provider_call(RXNORM)  # raises DailyCapExceeded if over the cap
             
         async def do_call():
             result = await self.session.call_tool(name, arguments)

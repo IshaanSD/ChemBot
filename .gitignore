@@ -9,3 +9,10 @@ eval_report.json
 **/__pycache__/
 *.py[cod]
 *$py.class
+
+# Archived, unused ADK/GCP scaffold (superseded by the FastAPI + Cloud Run deploy)
+legacy/
+
+# Local env + HuggingFace model cache
+.env
+.hf/

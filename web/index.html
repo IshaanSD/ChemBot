@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ChemBot</title>
+<style>
+  :root {
+    --bg: #f7f8fa; --panel: #ffffff; --text: #16181d; --muted: #5b6472;
+    --border: #e4e7ec; --accent: #2563eb; --accent-contrast: #ffffff;
+    --user-bg: #eef2ff; --error: #b42318; --radius: 12px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --panel: #171a21; --text: #e8eaed; --muted: #9aa3b2;
+      --border: #272b33; --accent: #3b82f6; --user-bg: #1e2433; --error: #f97066;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 24px 16px 120px; }
+  header { padding: 8px 0 4px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .examples { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 8px; }
+  .chip {
+    border: 1px solid var(--border); background: var(--panel); color: var(--text);
+    border-radius: 999px; padding: 7px 13px; font-size: 13px; cursor: pointer;
+  }
+  .chip:hover { border-color: var(--accent); color: var(--accent); }
+  .msgs { margin: 18px 0; display: flex; flex-direction: column; gap: 14px; }
+  .msg { padding: 13px 15px; border-radius: var(--radius); border: 1px solid var(--border); }
+  .msg.user { background: var(--user-bg); align-self: flex-end; max-width: 85%; }
+  .msg.bot { background: var(--panel); }
+  .msg.err { background: var(--panel); border-color: var(--error); color: var(--error); }
+  .msg .role { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 5px; }
+  .msg a { color: var(--accent); }
+  .msg.bot hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+  .cached { font-size: 11px; color: var(--muted); margin-top: 8px; }
+  .composer {
+    position: fixed; left: 0; right: 0; bottom: 0; background: var(--bg);
+    border-top: 1px solid var(--border); padding: 12px 16px;
+  }
+  .composer .row { max-width: 760px; margin: 0 auto; display: flex; gap: 8px; }
+  input[type=text] {
+    flex: 1; padding: 12px 14px; border-radius: var(--radius);
+    border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 15px;
+  }
+  input[type=text]:focus { outline: none; border-color: var(--accent); }
+  button.send {
+    padding: 0 18px; border: none; border-radius: var(--radius);
+    background: var(--accent); color: var(--accent-contrast); font-size: 15px; font-weight: 600; cursor: pointer;
+  }
+  button.send:disabled { opacity: 0.5; cursor: default; }
+  .disclaimer { font-size: 11px; color: var(--muted); text-align: center; margin-top: 8px; }
+  .typing { color: var(--muted); font-style: italic; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>ChemBot</h1>
+      <div class="sub">Biomedical Q&amp;A grounded only in FDA labels, FAERS, and PubMed — every answer cites its sources.</div>
+    </header>
+
+    <div class="examples" id="examples"></div>
+    <div class="msgs" id="msgs"></div>
+  </div>
+
+  <div class="composer">
+    <div class="row">
+      <input id="q" type="text" placeholder="Ask about a drug, adverse event, or study…" autocomplete="off" />
+      <button class="send" id="send">Ask</button>
+    </div>
+    <div class="disclaimer">Informational only — not medical advice. A demo with daily usage limits.</div>
+  </div>
+
+<script>
+  // API base: ?api=… overrides; otherwise the build-time placeholder, else same origin.
+  const PARAM_API = new URLSearchParams(location.search).get("api");
+  const BUILD_API = "__API_BASE__";
+  const API_BASE = (PARAM_API || (BUILD_API.startsWith("__") ? "" : BUILD_API) || location.origin).replace(/\/$/, "");
+
+  const msgsEl = document.getElementById("msgs");
+  const inputEl = document.getElementById("q");
+  const sendEl = document.getElementById("send");
+  const examplesEl = document.getElementById("examples");
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+  }
+  // Minimal, safe markdown: escape first, then bold, links, and line breaks.
+  function renderMarkdown(s) {
+    let h = escapeHtml(s);
+    h = h.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    h = h.replace(/(https?:\/\/[^\s)]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+    h = h.replace(/^---$/gm, "<hr>");
+    h = h.replace(/\n/g, "<br>");
+    return h;
+  }
+
+  function addMsg(role, cls, html, extra) {
+    const el = document.createElement("div");
+    el.className = "msg " + cls;
+    el.innerHTML = '<div class="role">' + role + "</div>" + html + (extra || "");
+    msgsEl.appendChild(el);
+    window.scrollTo(0, document.body.scrollHeight);
+    return el;
+  }
+
+  async function ask(question) {
+    question = (question || "").trim();
+    if (!question) return;
+    inputEl.value = "";
+    sendEl.disabled = true;
+    addMsg("You", "user", escapeHtml(question));
+    const thinking = addMsg("ChemBot", "bot", '<span class="typing">Searching the evidence…</span>');
+
+    try {
+      const res = await fetch(API_BASE + "/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        thinking.className = "msg err";
+        thinking.innerHTML = '<div class="role">Limit</div>' + escapeHtml(data.detail || ("Error " + res.status));
+      } else {
+        const cached = data.cached ? '<div class="cached">· served from cache</div>' : "";
+        thinking.innerHTML = '<div class="role">ChemBot</div>' + renderMarkdown(data.answer || "") + cached;
+      }
+    } catch (e) {
+      thinking.className = "msg err";
+      thinking.innerHTML = '<div class="role">Error</div>Could not reach the API. Check that the server is running.';
+    } finally {
+      sendEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  sendEl.addEventListener("click", () => ask(inputEl.value));
+  inputEl.addEventListener("keydown", e => { if (e.key === "Enter") ask(inputEl.value); });
+
+  // Load example questions as clickable chips.
+  fetch(API_BASE + "/examples")
+    .then(r => r.json())
+    .then(list => {
+      (list || []).forEach(q => {
+        const b = document.createElement("button");
+        b.className = "chip";
+        b.textContent = q;
+        b.addEventListener("click", () => ask(q));
+        examplesEl.appendChild(b);
+      });
+    })
+    .catch(() => {});
+</script>
+</body>
+</html>

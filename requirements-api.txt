@@ -1,0 +1,7 @@
+# API server dependencies (on top of the core ChemBot requirements).
+-r requirements.txt
+
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+slowapi==0.1.9
+python-dotenv==1.0.1
