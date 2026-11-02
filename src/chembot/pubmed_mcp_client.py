@@ -70,6 +70,9 @@ class PubMedMCPClient:
             await self.stdio_ctx.__aexit__(None, None, None)
 
     def _call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        from .usage import PUBMED, record_provider_call
+
+        record_provider_call(PUBMED)  # raises DailyCapExceeded if over the cap
         future = asyncio.run_coroutine_threadsafe(
             self._async_call_tool(name, arguments), self.loop
         )

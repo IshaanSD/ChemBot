@@ -72,6 +72,9 @@ class OpenFDAMCPClient:
             await self.stdio_ctx.__aexit__(None, None, None)
 
     def _call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        from .usage import OPENFDA, record_provider_call
+
+        record_provider_call(OPENFDA)  # raises DailyCapExceeded if over the cap
         future = asyncio.run_coroutine_threadsafe(
             self._async_call_tool(name, arguments), self.loop
         )
